@@ -1,9 +1,5 @@
 """models module contains implementations of the models classes for further benchmarking"""
 # reference: https://medium.com/stanford-cs224w/recommender-systems-with-gnns-in-pyg-d8301178e377
-
-# Standard library imports
-
-# Third-party imports
 import pandas as pd
 
 pd.set_option("display.max_colwidth", None)
@@ -16,6 +12,26 @@ import torch.nn.functional as F
 from torch_geometric.nn.conv import MessagePassing
 from torch_geometric.utils import degree
 
+torch.manual_seed(69)
+
+
+class AutoRec(nn.Module):
+    def __init__(self, num_users, num_items, latent_dim=32):
+        super(AutoRec, self).__init__()
+
+        self.user_embedding = nn.Embedding(num_users, latent_dim)
+
+        self.encoder = nn.Linear(num_items, latent_dim)
+        self.decoder = nn.Linear(latent_dim, num_items)
+
+    def forward(self, user, matrix):
+        user_embedding = self.user_embedding(user)
+        encoded = self.encoder(matrix)
+
+        encoded = nn.functional.sigmoid(encoded + user_embedding)
+
+        decoded = self.decoder(encoded)
+        return decoded
 
 
 class LightGCNConv(MessagePassing):
@@ -84,9 +100,10 @@ class RecSysGNN(nn.Module):
     ):
         super(RecSysGNN, self).__init__()
 
-        assert (
-            model in ["NGCF", "LightGCN", "Custom"]
-        ), f"model {model} not supported. Please choose from ['NGCF', 'LightGCN', 'Custom']"
+        assert model in [
+            "NGCF",
+            "LightGCN",
+        ], f"model {model} not supported. Please choose from ['NGCF', 'LightGCN']"
 
         self.model = model
         self.embedding = nn.Embedding(num_users + num_items, latent_dim)
@@ -116,7 +133,6 @@ class RecSysGNN(nn.Module):
             emb = conv(x=emb, edge_index=edge_index)
             embs.append(emb)
 
-        # TODO: adopt for custom model
         out = (
             torch.cat(embs, dim=-1)
             if self.model == "NGCF"

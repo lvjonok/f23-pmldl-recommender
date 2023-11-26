@@ -1,6 +1,6 @@
 """train module wraps the training and evaluation process"""
 from benchmark.loss import bpr_loss as compute_brp_loss
-from benchmark.metrics import get_metrics
+from benchmark.metrics import metrics, compute_relevance
 from dataclasses import dataclass
 from tqdm import tqdm
 import numpy as np
@@ -55,40 +55,6 @@ def dataloader(df: pd.DataFrame, batch_size: int = 32):
         torch.LongTensor(list(neg_items)).to(device) + n_usr,
     )
 
-    # # sample 'batch_size' users
-    # users = np.random.choice(n_users, size=batch_size, replace=False)
-    # # sort users
-    # users.sort()
-
-    # # helper function to sample from dataframe group
-    # def sample(group):
-    #     return group.sample(1)
-
-    # # sample by one existing item for each user
-    # items = (
-    #     df[df.user_id_idx.isin(users)].groupby("user_id_idx").apply(sample).item_id_idx
-    # )
-
-    # # create temporary table where there will be all user-item non-existing pairs
-    # df_outside_batch = df[~df.user_id_idx.isin(users)]
-
-    # non_items = (
-    #     df_outside_batch.groupby("user_id_idx")
-    #     .apply(lambda x: np.random.choice(x.item_id_idx))
-    #     .sample(batch_size)
-    # )
-
-    # # for each item we have to add the number of users so that the index will be unique among users
-    # items = items + n_users
-    # non_items = non_items + n_users
-
-    # # return tensors
-    # return (
-    #     torch.Tensor(list(users)).long().to(device),
-    #     torch.Tensor(list(items)).long().to(device),
-    #     torch.Tensor(list(non_items)).long().to(device),
-    # )
-
 
 @dataclass
 class TrainParameters:
@@ -99,17 +65,13 @@ class TrainParameters:
     K: int
 
 
-def train_and_eval(
+def baseline_train_and_eval(
     model,
     optimizer,
     train_df: pd.DataFrame,
     test_df: pd.DataFrame,
     params: TrainParameters,
 ):
-    loss_list_epoch = []
-    bpr_loss_list_epoch = []
-    reg_loss_list_epoch = []
-
     n_users = train_df.user_id_idx.nunique()
     n_items = train_df.item_id_idx.nunique()
 
@@ -120,8 +82,8 @@ def train_and_eval(
         )
     ).to(device)
 
-    recall_list = []
-    precision_list = []
+    metrics_results = []
+    losses_results = []
 
     for epoch in tqdm(range(params.EPOCHS)):
         n_batch = int(len(train_df) / params.BATCH_SIZE)
@@ -132,7 +94,6 @@ def train_and_eval(
 
         model.train()
         for batch_idx in range(n_batch):
-            # print(batch_idx)
             optimizer.zero_grad()
 
             users, pos_items, neg_items = dataloader(train_df, params.BATCH_SIZE)
@@ -162,27 +123,20 @@ def train_and_eval(
         with torch.no_grad():
             _, out = model(train_adjacency)
             final_user_Embed, final_item_Embed = torch.split(out, (n_users, n_items))
-            test_topK_recall, test_topK_precision = get_metrics(
-                final_user_Embed,
-                final_item_Embed,
-                n_users,
-                n_items,
-                train_df,
-                test_df,
-                params.K,
-            )
+            relevance = compute_relevance(final_user_Embed, final_item_Embed, train_df)
+            result = metrics(test_df, params.K, relevance)
 
-        loss_list_epoch.append(round(np.mean(final_loss_list), 4))
-        bpr_loss_list_epoch.append(round(np.mean(bpr_loss_list), 4))
-        reg_loss_list_epoch.append(round(np.mean(reg_loss_list), 4))
+        losses_results.append(
+            [
+                round(np.mean(final_loss_list), 4),
+                round(np.mean(bpr_loss_list), 4),
+                round(np.mean(reg_loss_list), 4),
+            ]
+        )
 
-        recall_list.append(round(test_topK_recall, 4))
-        precision_list.append(round(test_topK_precision, 4))
+        metrics_results.append(result)
 
     return (
-        loss_list_epoch,
-        bpr_loss_list_epoch,
-        reg_loss_list_epoch,
-        recall_list,
-        precision_list,
+        np.array(losses_results),
+        np.array(metrics_results),
     )
