@@ -253,3 +253,13 @@ dependencies:
   - zipp=3.17.0=pyhd8ed1ab_0
   - zlib=1.2.13=hd590300_5
   - zstd=1.5.5=hfc55251_0
+  - pip:
+      - cfgv==3.4.0
+      - click==8.0.2
+      - distlib==0.3.7
+      - identify==2.5.32
+      - nodeenv==1.8.0
+      - pre-commit==3.5.0
+      - ruff==0.1.6
+      - virtualenv==20.24.7
+prefix: /home/leo/mambaforge/envs/pmldl-recommender
